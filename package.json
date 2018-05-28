@@ -1,0 +1,13 @@
+{
+  "name": "enjs",
+  "version": "0.0.1",
+  "description": "enjs",
+  "license": "",
+  "dependencies": {
+    "escodegen": "^1.9.1",
+    "esprima": "^4.0.0",
+    "estraverse": "^4.2.0",
+    "uglify-js": "latest"
+  },
+  "repository": ""
+}
