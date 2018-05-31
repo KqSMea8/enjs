@@ -22,8 +22,6 @@ estraverse.replace(ast, {
     }
   }
 });
-
-
 const regen_code = escodegen.generate(ast);
 console.log(regen_code);
 eval(regen_code);
