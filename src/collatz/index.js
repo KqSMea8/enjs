@@ -6,17 +6,22 @@ const fs = require('fs');
 const path = require('path');
 const estraverse = require('estraverse');
 
-function getRandomInt (min, max) {
+function randomInt (min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 /**
  * Gen Expression
- * @param _IfStatement
+ * @param _IfStatement 表达式
+ * @param type 运算符号类型
  */
-function getByLiteral1 (_IfStatement) {
-  const random = getRandomInt(1, 2);
-  let collatz_ast = fs.readFileSync(path.join(__dirname, 'db', random + '.js.gen.json')).toString();
+function getByLiteral (_IfStatement, type) {
+  const collatz_files = fs.readdirSync(path.join(__dirname, 'db', type));
+  if (collatz_files.length < 1) {
+    return _IfStatement;
+  }
+  const random = randomInt(1, collatz_files.filter(e => e.indexOf('.js.gen.json') > -1).length);
+  let collatz_ast = fs.readFileSync(path.join(__dirname, 'db', type, random + '.js.gen.json')).toString();
 
   collatz_ast = JSON.parse(collatz_ast);
   estraverse.replace(collatz_ast, {
@@ -51,5 +56,11 @@ function getByLiteral1 (_IfStatement) {
 }
 
 module.exports = {
-  getByLiteral1
+  getByLiteral,
+  getByLiteral_e: _ => getByLiteral(_, 'e'),
+  getByLiteral_g: _ => getByLiteral(_, 'g'),
+  getByLiteral_ge: _ => getByLiteral(_, 'ge'),
+  getByLiteral_l: _ => getByLiteral(_, 'l'),
+  getByLiteral_le: _ => getByLiteral(_, 'le'),
+  getByLiteral_ne: _ => getByLiteral(_, 'ne'),
 };

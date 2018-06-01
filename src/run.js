@@ -12,11 +12,24 @@ console.log('// --------------------------------------');
 console.log('// Obfuscated code:');
 estraverse.replace(ast, {
   enter (node) {
-    if (!node.__obfuscated && node.type === 'IfStatement' && node.test.type === 'BinaryExpression') {
+    if (node.__obfuscated) return;
+
+    if (node.type === 'IfStatement' && node.test.type === 'BinaryExpression') {
       // 一方是数字的 IfStatement
-      if(node.test.left.type === 'Literal' || node.test.right.type === 'Literal'){
-        if (node.test.operator === '===') {
-          return collatz.getByLiteral1(node)
+      if (node.test.left.type === 'Literal' || node.test.right.type === 'Literal') {
+        switch (node.test.operator) {
+          case '===':
+            return collatz.getByLiteral_e(node);
+          case '>':
+            return collatz.getByLiteral_g(node);
+          case '>=':
+            return collatz.getByLiteral_ge(node);
+          case '<':
+            return collatz.getByLiteral_l(node);
+          case '<=':
+            return collatz.getByLiteral_le(node);
+          case '!==':
+            return collatz.getByLiteral_ne(node);
         }
       }
     }
