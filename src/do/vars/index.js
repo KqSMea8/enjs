@@ -96,7 +96,7 @@ function handle (source) {
       if (node.type === 'FunctionExpression') {
         scopeMgr.push(scopeMgr.cnt_scope++);
         console.log('enter scope: ' + scopeMgr.current().id);
-        // TODO 进入作用域, 重新初始化变量
+        // 进入作用域, 重新初始化变量? 还未确定
       }
 
       const scope = scopeMgr.current();
@@ -106,12 +106,23 @@ function handle (source) {
       // return ;
 
       if (node.type === 'VariableDeclaration') {
-        // `var a = 1` --> `_global['a'] = 1`
         const _expressions = [];
         node.declarations.forEach(e => {
           scope.variables.push(e.id.name);
-          if (e.init) {
-            // var a = 1
+          // `var a = 1` --> `_global['a'] = 1`
+          // `var a` --> `_global['a'] = null`
+          if(parent.type === 'ForInStatement'){
+            _expressions.push({
+              type: 'MemberExpression',
+              computed: true,
+              object: { type: 'Identifier', name: variablesContainer },
+              property: {
+                type: 'Literal',
+                value: prefix + e.id.name,
+                raw: `'${prefix + e.id.name}'`
+              }
+            })
+          }else{
             _expressions.push({
               type: 'AssignmentExpression',
               operator: '=',
@@ -126,19 +137,7 @@ function handle (source) {
                     raw: `'${prefix + e.id.name}'`
                   }
                 },
-              right: e.init
-            })
-          } else {
-            // var a
-            _expressions.push({
-              type: 'MemberExpression',
-              computed: true,
-              object: { type: 'Identifier', name: variablesContainer },
-              property: {
-                type: 'Literal',
-                value: prefix + e.id.name,
-                raw: `'${prefix + e.id.name}'`
-              }
+              right: e.init || { type: 'Literal', value: null, raw: 'null' }
             })
           }
         });
@@ -190,10 +189,6 @@ function handle (source) {
         !(parent.type === 'FunctionExpression' && parent.params.includes(node)) && // 不是函数参数
         !(parent.type === 'CatchClause') && // 不是 try的catch
         node.name !== variablesContainer) {
-
-        if (node.name === 'callback' && scope.node.type === 'FunctionExpression' && scope.node.params.length === 3) {
-          debugger;
-        }
 
         // 是函数的参数, 直接返回
         if (scope.node.type === 'FunctionExpression') {
