@@ -1,8 +1,13 @@
-v[func(a,b)]=1;
-function f (count) {
-  for (var i = 0; i < count; i++) {
-    console.log(i);
-    f(count - 1);
-  }
+f();
+f2();
+function f () {
 }
-f(3);
+
+var f2 = function () {
+  var f3 = function () {
+
+  };
+  f3()
+};
+f();
+f2();

@@ -1,8 +1,12 @@
-var _0xe23e324f = [];
-_0xe23e324f['_0x0_f'] = function (count) {
-    for (_0xe23e324f['_0x1_i'] = 0; _0xe23e324f['_0x1_i'] < count; _0xe23e324f['_0x1_i']++) {
-        console.log(_0xe23e324f['_0x1_i']);
-        _0xe23e324f['_0x0_f'](count - 1);
-    }
+var _0xdda0722a = [];
+function f() {
+}
+f();
+f2();
+var f2 = function () {
+    _0xdda0722a['_0x2_f3'] = function () {
+    };
+    _0xdda0722a['_0x2_f3']();
 };
-_0xe23e324f['_0x0_f'](3);
+f();
+f2();

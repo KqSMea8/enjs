@@ -63,16 +63,16 @@ function handle (source) {
         })
       }
 
-      if (node.type === 'VariableDeclaration') {
+      if (node.type === 'VariableDeclaration' && scope.id !== 0) {
         node.declarations.forEach(e => {
           scope.variables.push(e.id.name);
         });
       }
-      else if (node.type === 'FunctionDeclaration') {
+      else if (node.type === 'FunctionDeclaration' && scope.id !== 0) {
         scope.variables.push(node.id.name);
       }
 
-      if (node.type === 'FunctionExpression' || node.type === 'FunctionDeclaration') {
+      if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
         const scopeId = scopeMgr.add({
           node,
           variables: [],
@@ -82,7 +82,7 @@ function handle (source) {
       }
     },
     leave (node, parent) {
-      if (node.type === 'FunctionExpression' || node.type === 'FunctionDeclaration') {
+      if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
         scopeMgr.pop();
       }
     }
@@ -91,9 +91,7 @@ function handle (source) {
   scopeMgr.entered = [0];
   estraverse.replace(source.ast, {
     enter (node, parent) {
-      // if (node.type === 'FunctionExpression' || node.type === 'FunctionDeclaration') {
-      // FunctionDeclaration 会被替换掉, 没有 FunctionDeclaration
-      if (node.type === 'FunctionExpression') {
+      if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
         scopeMgr.push(scopeMgr.cnt_scope++);
         console.log('enter scope: ' + scopeMgr.current().id);
         // 进入作用域, 重新初始化变量? 还未确定
@@ -105,13 +103,15 @@ function handle (source) {
 
       // return ;
 
-      if (node.type === 'VariableDeclaration') {
+      if (node.type === 'VariableDeclaration' &&
+        scope.id !== 0 // 不是顶层 scope
+      ) {
         const _expressions = [];
         node.declarations.forEach(e => {
           scope.variables.push(e.id.name);
           // `var a = 1` --> `_global['a'] = 1`
           // `var a` --> `_global['a'] = null`
-          if(parent.type === 'ForInStatement'){
+          if (parent.type === 'ForInStatement') {
             _expressions.push({
               type: 'MemberExpression',
               computed: true,
@@ -122,7 +122,7 @@ function handle (source) {
                 raw: `'${prefix + e.id.name}'`
               }
             })
-          }else{
+          } else {
             _expressions.push({
               type: 'AssignmentExpression',
               operator: '=',
@@ -156,7 +156,9 @@ function handle (source) {
             };
         }
       }
-      else if (node.type === 'FunctionDeclaration') {
+      else if (node.type === 'FunctionDeclaration' &&
+        scope.id !== 0 // 不是顶层 scope
+      ) {
         // `function a(){}` --> `_global['a'] = function (){}`
         const _FunctionExpression = Object.assign({}, node);
         _FunctionExpression.type = 'FunctionExpression';
@@ -184,6 +186,8 @@ function handle (source) {
         }
       }
       else if (node.type === 'Identifier' &&
+        parent.type !== 'VariableDeclaration' &&
+        parent.type !== 'FunctionDeclaration' &&
         !(parent.type === 'Property' && node === parent.key) && // 不是对象属性名称 (声明)
         !(parent.type === 'MemberExpression' && node === parent.property && parent.computed === false) && // 不是对象属性名称 (访问)
         !(parent.type === 'FunctionExpression' && parent.params.includes(node)) && // 不是函数参数
@@ -223,7 +227,7 @@ function handle (source) {
       }
     },
     leave (node, parent) {
-      if (node.type === 'FunctionExpression' || node.type === 'FunctionDeclaration') {
+      if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
         console.log('leave scope: ' + scopeMgr.current().id);
         scopeMgr.pop();
       }
