@@ -1,13 +1,21 @@
 const estraverse = require('estraverse');
 const escodegen = require('escodegen');
 
+function genVariable () {
+  let prefix = 'v';
+  for (const i in arguments) {
+    prefix += '_' + i;
+  }
+  return prefix + '_' + parseInt(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, '0');
+}
+
 function handle (source) {
-  const variablesContainer = '_0x' + parseInt(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, '0');
   const scopeMgr = {
     scopes: [{
       id: 0,
       variables: [],
-      node: source.ast
+      node: source.ast,
+      variablesContainer: genVariable(0)
     }],
     entered: [0],
     cnt_scope: 1,
@@ -19,6 +27,7 @@ function handle (source) {
     },
     add (scope) {
       scope.id = this.cnt_scope;
+      scope.variablesContainer = genVariable(0);
       this.scopes.push(scope);
       return this.cnt_scope++;
     },
@@ -115,7 +124,7 @@ function handle (source) {
             _expressions.push({
               type: 'MemberExpression',
               computed: true,
-              object: { type: 'Identifier', name: variablesContainer },
+              object: { type: 'Identifier', name: scope.variablesContainer },
               property: {
                 type: 'Literal',
                 value: prefix + e.id.name,
@@ -130,7 +139,7 @@ function handle (source) {
                 {
                   type: 'MemberExpression',
                   computed: true,
-                  object: { type: 'Identifier', name: variablesContainer },
+                  object: { type: 'Identifier', name: scope.variablesContainer },
                   property: {
                     type: 'Literal',
                     value: prefix + e.id.name,
@@ -174,7 +183,7 @@ function handle (source) {
                 {
                   type: 'MemberExpression',
                   computed: true,
-                  object: { type: 'Identifier', name: variablesContainer },
+                  object: { type: 'Identifier', name: scope.variablesContainer },
                   property: {
                     type: 'Literal',
                     value: prefix + node.id.name,
@@ -192,7 +201,7 @@ function handle (source) {
         !(parent.type === 'MemberExpression' && node === parent.property && parent.computed === false) && // 不是对象属性名称 (访问)
         !(parent.type === 'FunctionExpression' && parent.params.includes(node)) && // 不是函数参数
         !(parent.type === 'CatchClause') && // 不是 try的catch
-        node.name !== variablesContainer) {
+        node.name !== scope.variablesContainer) {
 
         // 是函数的参数, 直接返回
         if (scope.node.type === 'FunctionExpression') {
@@ -217,7 +226,7 @@ function handle (source) {
         return {
           type: 'MemberExpression',
           computed: true,
-          object: { type: 'Identifier', name: variablesContainer },
+          object: { type: 'Identifier', name: scope.variablesContainer },
           property: {
             type: 'Literal',
             value: prefix + node.name,
@@ -228,21 +237,22 @@ function handle (source) {
     },
     leave (node, parent) {
       if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
-        console.log('leave scope: ' + scopeMgr.current().id);
+        const scope = scopeMgr.current();
+        node.body.unshift({
+          type: 'VariableDeclaration',
+          declarations: [
+            {
+              type: 'VariableDeclarator',
+              id: { type: 'Identifier', name: scope.variablesContainer },
+              init: { type: 'ArrayExpression', elements: [] }
+            }
+          ],
+          kind: 'var'
+        });
+        console.log('leave scope: ' + scope.id);
         scopeMgr.pop();
       }
     }
-  });
-  source.ast.body.unshift({
-    type: 'VariableDeclaration',
-    declarations: [
-      {
-        type: 'VariableDeclarator',
-        id: { type: 'Identifier', name: variablesContainer },
-        init: { type: 'ArrayExpression', elements: [] }
-      }
-    ],
-    kind: 'var'
   });
   source.code = escodegen.generate(source.ast);
   console.log("\r\n");
