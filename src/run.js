@@ -1,6 +1,6 @@
 const esprima = require('esprima');
 const fs = require('fs');
-const TEST_SCRIPT = fs.readFileSync('./demo/vars.js').toString();
+const TEST_SCRIPT = fs.readFileSync('./demo/flow.js').toString();
 
 const source = (function () {
   return {
@@ -14,6 +14,9 @@ const source = (function () {
 
 // require('./do/encrypt').handle(source);
 
-require('./do/vars').handle(source);
+require('./do/flow').handle(source);
 
-fs.writeFileSync('./demo/vars_output.js', source.code);
+// require('./do/vars').handle(source);
+
+
+fs.writeFileSync('./demo/flow_output.js', source.code);

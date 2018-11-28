@@ -7,7 +7,9 @@
     "escodegen": "^1.9.1",
     "esprima": "^4.0.0",
     "estraverse": "^4.2.0",
-    "uglify-js": "latest"
+    "lodash.shuffle": "^4.2.0",
+    "uglify-js": "latest",
+    "unique-random": "^2.0.0"
   },
   "repository": ""
 }

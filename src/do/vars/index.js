@@ -1,6 +1,11 @@
 const estraverse = require('estraverse');
 const escodegen = require('escodegen');
 
+const OPTIONS = {
+  REPLACE_VARIABLE_TO_ARRAY: 1, // 用数组代替变量声明
+  REPLACE_FUNCTION_TO_ARRAY: 1, // 用数组代替函数声明
+};
+
 function genVariable () {
   let prefix = 'v';
   for (const i in arguments) {
@@ -20,10 +25,10 @@ function handle (source) {
     entered: [0],
     cnt_scope: 1,
     current () {
-      return this.scopes[this.entered[this.entered.length - 1]]
+      return this.scopes[this.entered[this.entered.length - 1]];
     },
     get (level) {
-      return this.scopes[level]
+      return this.scopes[level];
     },
     add (scope) {
       scope.id = this.cnt_scope;
@@ -38,7 +43,9 @@ function handle (source) {
       this.entered.pop();
     }
   };
+
   // 先匹配一下各个 scope 的变量, 一些预处理
+  console.log('\r\nparse scope....');
   estraverse.replace(source.ast, {
     enter (node, parent) {
       if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
@@ -48,7 +55,7 @@ function handle (source) {
           parent: scopeMgr.current()
         });
         scopeMgr.push(scopeId);
-        console.log('enter scope: ' + scopeMgr.current().id);
+        // console.log('enter scope: ' + scopeMgr.current().id);
       }
       const scope = scopeMgr.current();
 
@@ -56,72 +63,75 @@ function handle (source) {
         // 将函数声明提升到作用域顶部 (变量全都变成数组访问了, 默认值就是undefined, 无需提升)
         node.body.forEach(e => {
           if (e.type === 'FunctionDeclaration') {
-            const scope_body = scope.node.body.constructor === Array ? scope.node.body : scope.node.body.body;
-            let parent_body = null;
+            const scopeBody = scope.node.body.constructor === Array ? scope.node.body : scope.node.body.body;
+            let parentBody = null;
             if (parent.type === 'Program' || parent.type === 'BlockStatement') {
-              parent_body = parent.body
+              parentBody = parent.body;
             } else if (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration') {
-              parent_body = parent.body.body
+              parentBody = parent.body.body;
             } else if (parent.type === 'TryStatement') {
-              parent_body = parent.block.body
+              parentBody = parent.block.body;
             } else if (parent.type === 'IfStatement') {
-              parent_body = parent.consequent.body
+              parentBody = parent.consequent.body;
             } else {
               debugger;
               throw new Error('test');
             }
-            console.log(scope.id + ' _ 提升函数到顶部');
-            for (let i = 0; i < scope_body.length; i++) {
-              if (scope_body[i].type !== 'FunctionDeclaration') {
-                parent_body.splice(parent_body.indexOf(e), 1);
-                scope_body.splice(i, 0, e);
+            // console.log(scope.id + ' _ 提升函数到顶部');
+            for (let i = 0; i < scopeBody.length; i++) {
+              if (scopeBody[i].type !== 'FunctionDeclaration') {
+                parentBody.splice(parentBody.indexOf(e), 1);
+                scopeBody.splice(i, 0, e);
                 break;
               }
             }
           }
-        })
+        });
       }
 
-      if (node.type === 'VariableDeclaration' && scope.id !== 0) {
+      if (OPTIONS.REPLACE_VARIABLE_TO_ARRAY &&
+        node.type === 'VariableDeclaration' && scope.id !== 0) {
         node.declarations.forEach(e => {
           scope.variables.push(e.id.name);
         });
-      }
-      else if (node.type === 'FunctionDeclaration' && scope.id !== 0) {
+      } else if (OPTIONS.REPLACE_FUNCTION_TO_ARRAY &&
+        node.type === 'FunctionDeclaration' && scope.id !== 0) {
         scope.variables.push(node.id.name);
       }
     },
     leave (node, parent) {
       if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
         const scope = scopeMgr.current();
-        console.log('leave scope: ' + scope);
+        // console.log('leave scope: ' + scope.id);
         scopeMgr.pop();
       }
     }
   });
-  scopeMgr.cnt_scope = 1;
-  scopeMgr.entered = [0];
-  estraverse.replace(source.ast, {
-    enter (node, parent) {
-      // 进入了 BlockStatement 再处理scope, 因为 FunctionDeclaration 要替换掉
-      if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
-        scopeMgr.push(scopeMgr.cnt_scope++);
-        try {
-          console.log('enter scope: ' + scopeMgr.current().id);
-        } catch (e) {
-          console.error(e);
-          debugger;
+
+  if (OPTIONS.REPLACE_VARIABLE_TO_ARRAY || OPTIONS.REPLACE_FUNCTION_TO_ARRAY) {
+    console.log('\r\nobfuscate identifier....');
+    scopeMgr.cnt_scope = 1;
+    scopeMgr.entered = [0];
+    estraverse.replace(source.ast, {
+      enter (node, parent) {
+        // 进入了 BlockStatement 再处理scope, 因为 FunctionDeclaration 有可能替换掉
+        if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
+          scopeMgr.push(scopeMgr.cnt_scope++);
+          try {
+            console.log('enter scope: ' + scopeMgr.current().id);
+          } catch (e) {
+            console.error(e);
+            debugger;
+          }
+          // 进入作用域, 重新初始化变量? 还未确定
         }
-        // 进入作用域, 重新初始化变量? 还未确定
-      }
-      const scope = scopeMgr.current();
-      let prefix = `i_${scope.id}_`;
-      // console.log(node);
+        const scope = scopeMgr.current();
+        let prefix = `i_${scope.id}_`;
+        // console.log(node);
 
-      // return ;
-
-      if (1) {
-        if (node.type === 'VariableDeclaration' &&
+        // return ;
+        if (OPTIONS.REPLACE_VARIABLE_TO_ARRAY &&
+          node.type === 'VariableDeclaration' &&
           scope.id !== 0 // 不是顶层 scope
         ) {
           const _expressions = [];
@@ -137,9 +147,9 @@ function handle (source) {
                 property: {
                   type: 'Literal',
                   value: prefix + e.id.name,
-                  raw: `'${prefix + e.id.name}'`
+                  raw: `${prefix + e.id.name}`
                 }
-              })
+              });
             } else {
               _expressions.push({
                 type: 'AssignmentExpression',
@@ -152,11 +162,11 @@ function handle (source) {
                     property: {
                       type: 'Literal',
                       value: prefix + e.id.name,
-                      raw: `'${prefix + e.id.name}'`
+                      raw: `${prefix + e.id.name}`
                     }
                   },
                 right: e.init || { type: 'Literal', value: null, raw: 'null' }
-              })
+              });
             }
           });
 
@@ -166,22 +176,21 @@ function handle (source) {
               return _expressions[0];
             default:
               return {
-                type: "ExpressionStatement",
+                type: 'ExpressionStatement',
                 expression: {
-                  type: "SequenceExpression",
+                  type: 'SequenceExpression',
                   expressions: _expressions
                 }
               };
           }
-        }
-        else if (node.type === 'FunctionDeclaration' &&
+        } else if (OPTIONS.REPLACE_FUNCTION_TO_ARRAY &&
+          node.type === 'FunctionDeclaration' &&
           scope.id !== 0 // 不是顶层 scope
         ) {
           // `function a(){}` --> `_global['a'] = function (){}`
           const _FunctionExpression = Object.assign({}, node);
           _FunctionExpression.type = 'FunctionExpression';
           _FunctionExpression.id = null;
-          scope.variables.push(node.id.name);
           return {
             type: 'ExpressionStatement',
             expression:
@@ -196,14 +205,13 @@ function handle (source) {
                     property: {
                       type: 'Literal',
                       value: prefix + node.id.name,
-                      raw: `'${prefix + node.id.name}'`
+                      raw: `${prefix + node.id.name}`
                     }
                   },
                 right: _FunctionExpression
               }
-          }
-        }
-        else if (node.type === 'Identifier' &&
+          };
+        } else if (node.type === 'Identifier' &&
           parent.type !== 'VariableDeclaration' &&
           parent.type !== 'FunctionDeclaration' &&
           !(parent.type === 'Property' && node === parent.key) && // 不是对象属性名称 (声明)
@@ -211,7 +219,6 @@ function handle (source) {
           !(parent.type === 'FunctionExpression' && parent.params.includes(node)) && // 不是函数参数
           !(parent.type === 'CatchClause') && // 不是 try的catch
           node.name !== scope.variablesContainer) {
-
           // 是函数的参数, 直接返回
           if (scope.node.type === 'FunctionExpression') {
             for (let i = 0; i < scope.node.params.length; i++) {
@@ -241,35 +248,36 @@ function handle (source) {
             property: {
               type: 'Literal',
               value: prefix + node.name,
-              raw: `'${prefix + node.name}'`
+              raw: `${prefix + node.name}`
             }
-          }
+          };
+        }
+      },
+      leave (node, parent) {
+        if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
+          const scope = scopeMgr.current();
+          node.body.unshift({
+            type: 'VariableDeclaration',
+            declarations: [
+              {
+                type: 'VariableDeclarator',
+                id: { type: 'Identifier', name: scope.variablesContainer },
+                init: { type: 'ArrayExpression', elements: [] }
+              }
+            ],
+            kind: 'var'
+          });
+          console.log('leave scope: ' + scope.id);
+          scopeMgr.pop();
         }
       }
-    },
-    leave (node, parent) {
-      if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
-        const scope = scopeMgr.current();
-        node.body.unshift({
-          type: 'VariableDeclaration',
-          declarations: [
-            {
-              type: 'VariableDeclarator',
-              id: { type: 'Identifier', name: scope.variablesContainer },
-              init: { type: 'ArrayExpression', elements: [] }
-            }
-          ],
-          kind: 'var'
-        });
-        console.log('leave scope: ' + scope.id);
-        scopeMgr.pop();
-      }
-    }
-  });
+    });
+  }
+
   source.code = escodegen.generate(source.ast);
-  console.log("\r\n");
+  console.log('\r\n');
   console.log(source.code);
-  console.log("\r\n");
+  console.log('\r\n');
 }
 
 module.exports = {
