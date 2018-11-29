@@ -3,6 +3,8 @@ const escodegen = require('escodegen');
 const shuffle = require('lodash.shuffle');
 const uniqueRandom = require('unique-random');
 
+const FLOW_DEBUG = true;
+
 function handle (source) {
   const scopeMgr = {
     scopes: [{
@@ -58,6 +60,37 @@ function handle (source) {
   scopeMgr.cnt_scope = 1;
   scopeMgr.entered = [0];
   const globalJmpTable = [];
+  const astHelper = {
+    break () {
+      return {
+        'type': 'BreakStatement',
+        'label': null
+      };
+    },
+    empty () {
+      return {
+        'type': 'EmptyStatement'
+      };
+    },
+    flow_set_next (step) {
+      return {
+        'type': 'ExpressionStatement',
+        'expression': {
+          'type': 'AssignmentExpression',
+          'operator': '=',
+          'left': {
+            'type': 'Identifier',
+            'name': '__step__'
+          },
+          'right': {
+            'type': 'Literal',
+            'value': step // 水平流程, 下一步就是下一个数组内容
+          }
+        }
+      };
+    }
+  };
+
   estraverse.traverse(source.ast, {
     enter (node, parent) {
       if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
@@ -66,7 +99,9 @@ function handle (source) {
 
         const rand = uniqueRandom(1, 0x1FFFFFFF);
         const switchCaseFlow = [];
-        estraverse.traverse(node, {
+
+        // 匹配流程
+        estraverse.replace(node, {
           enter (node_, parent_) {
             if (node_.type === 'ExpressionStatement' ||
               node_.type === 'VariableDeclaration' || node_.type === 'FunctionDeclaration') {
@@ -83,47 +118,101 @@ function handle (source) {
                   // 当前代码
                   node_,
                   // 准备下一步代码
-                  {
-                    'type': 'ExpressionStatement',
-                    'expression': {
-                      'type': 'AssignmentExpression',
-                      'operator': '=',
-                      'left': {
-                        'type': 'MemberExpression',
-                        'computed': false,
-                        'object': {
-                          'type': 'Identifier',
-                          'name': '__flow__'
-                        },
-                        'property': {
-                          'type': 'Identifier',
-                          'name': 'step'
-                        }
-                      },
-                      'right': {
-                        'type': 'Literal',
-                        'value': globalJmpTable.length // 水平流程, 下一步就是下一个数组内容
-                      }
-                    }
-                  },
-                  {
-                    'type': 'BreakStatement',
-                    'label': null
-                  }
+                  astHelper.flow_set_next(globalJmpTable.length), // 水平流程, 下一步就是下一个数组内容
+                  astHelper.break(),
                 ]
               });
+
+              return astHelper.empty();
+            } else if (node_.type === 'IfStatement') {
+              const caseValue = {
+                if: rand(),
+                consequent: rand(),
+                alternate: rand()
+              };
+              let step = {
+                if: globalJmpTable.length - 1,
+                consequent: globalJmpTable.length + 1,
+                alternate: globalJmpTable.length + 2,
+                end: globalJmpTable.length + 3,
+              };
+
+              globalJmpTable.push(caseValue.if);
+              globalJmpTable.push(caseValue.consequent);
+              globalJmpTable.push(caseValue.alternate);
+
+              // if
+              switchCaseFlow.push({
+                'type': 'SwitchCase',
+                'test': {
+                  'type': 'Literal',
+                  'value': caseValue.if
+                },
+                'consequent': [
+                  // 当前代码
+                  {
+                    'type': 'IfStatement',
+                    'test': node_.test,
+                    'consequent': {
+                      'type': 'BlockStatement',
+                      'body': [
+                        astHelper.flow_set_next(step.consequent),
+                      ]
+                    },
+                    'alternate': {
+                      'type': 'BlockStatement',
+                      'body': [
+                        astHelper.flow_set_next(step.alternate),
+                      ]
+                    }
+                  },
+                  astHelper.break(),
+                ]
+              });
+              // consequent (true)
+              switchCaseFlow.push({
+                'type': 'SwitchCase',
+                'test': {
+                  'type': 'Literal',
+                  'value': caseValue.consequent
+                },
+                'consequent': [
+                  // 当前代码
+                  node_.consequent,
+                  // 准备下一步代码
+                  astHelper.flow_set_next(step.end),
+                  astHelper.break(),
+                ]
+              });
+              // alternate (false)
+              switchCaseFlow.push({
+                'type': 'SwitchCase',
+                'test': {
+                  'type': 'Literal',
+                  'value': caseValue.alternate
+                },
+                'consequent': [
+                  // 当前代码
+                  node_.alternate,
+                  // 准备下一步代码
+                  astHelper.flow_set_next(step.end),
+                  astHelper.break(),
+                ]
+              });
+
+              return astHelper.empty();
             }
           }
         });
-        // set `end = true;` to break the while loop
+
+        // set `__step__ = false;` to break the while loop
         const to = rand();
         globalJmpTable.push(to);
         switchCaseFlow.push({
           'type': 'SwitchCase',
           'test': {
             'type': 'Literal',
-            'value': to,
-            'raw': `${to}`
+            'value': to
           },
           'consequent': [
             {
@@ -133,23 +222,37 @@ function handle (source) {
                 'operator': '=',
                 'left': {
                   'type': 'Identifier',
-                  'name': 'end'
+                  'name': '__step__'
                 },
                 'right': {
                   'type': 'Literal',
-                  'value': true,
-                  'raw': 'true'
+                  'value': false
                 }
               }
             },
-            {
-              'type': 'BreakStatement',
-              'label': null
-            }
+            astHelper.break(),
           ]
         });
-        // replace scope body
+
+        // replace scope body to `while(1) { switch (__flow__.next()) { case... } }`
         node.body = [
+          {
+            'type': 'VariableDeclaration',
+            'declarations': [
+              {
+                'type': 'VariableDeclarator',
+                'id': {
+                  'type': 'Identifier',
+                  'name': '__step__'
+                },
+                'init': {
+                  'type': 'Literal',
+                  'value': 0
+                }
+              }
+            ],
+            'kind': 'var'
+          },
           {
             'type': 'WhileStatement',
             'test': {
@@ -160,24 +263,6 @@ function handle (source) {
             'body': {
               'type': 'BlockStatement',
               'body': [
-                {
-                  'type': 'VariableDeclaration',
-                  'declarations': [
-                    {
-                      'type': 'VariableDeclarator',
-                      'id': {
-                        'type': 'Identifier',
-                        'name': 'end'
-                      },
-                      'init': {
-                        'type': 'Literal',
-                        'value': false,
-                        'raw': 'false'
-                      }
-                    }
-                  ],
-                  'kind': 'var'
-                },
                 {
                   'type': 'SwitchStatement',
                   'discriminant': {
@@ -194,15 +279,28 @@ function handle (source) {
                         'name': 'next'
                       }
                     },
-                    'arguments': []
+                    'arguments': [
+                      {
+                        'type': 'Identifier',
+                        'name': '__step__'
+                      }
+                    ]
                   },
-                  'cases': shuffle(switchCaseFlow) // 流程打乱
+                  'cases': FLOW_DEBUG ? switchCaseFlow : shuffle(switchCaseFlow) // 流程打乱
                 },
                 {
                   'type': 'IfStatement',
                   'test': {
-                    'type': 'Identifier',
-                    'name': 'end'
+                    'type': 'BinaryExpression',
+                    'operator': '===',
+                    'left': {
+                      'type': 'Identifier',
+                      'name': '__step__'
+                    },
+                    'right': {
+                      'type': 'Literal',
+                      'value': false
+                    }
                   },
                   'consequent': {
                     'type': 'BreakStatement',
@@ -266,29 +364,18 @@ function handle (source) {
               'type': 'Property',
               'key': {
                 'type': 'Identifier',
-                'name': 'step'
-              },
-              'computed': false,
-              'value': {
-                'type': 'Literal',
-                'value': 0,
-                'raw': '0'
-              },
-              'kind': 'init',
-              'method': false,
-              'shorthand': false
-            },
-            {
-              'type': 'Property',
-              'key': {
-                'type': 'Identifier',
                 'name': 'next'
               },
               'computed': false,
               'value': {
                 'type': 'FunctionExpression',
                 'id': null,
-                'params': [],
+                'params': [
+                  {
+                    'type': 'Identifier',
+                    'name': '__step__'
+                  }
+                ],
                 'body': {
                   'type': 'BlockStatement',
                   'body': [
@@ -309,15 +396,8 @@ function handle (source) {
                           }
                         },
                         'property': {
-                          'type': 'MemberExpression',
-                          'computed': false,
-                          'object': {
-                            'type': 'ThisExpression'
-                          },
-                          'property': {
-                            'type': 'Identifier',
-                            'name': 'step'
-                          }
+                          'type': 'Identifier',
+                          'name': '__step__'
                         }
                       }
                     }
