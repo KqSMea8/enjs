@@ -96,6 +96,13 @@ function handle (source) {
       if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
         scopeMgr.push(scopeMgr.cnt_scope++);
         console.log('enter scope: ' + scopeMgr.current().id);
+      }
+    },
+    leave (node, parent) {
+      if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
+        const scope = scopeMgr.current();
+        console.log('leave scope: ' + scope.id);
+        scopeMgr.pop();
 
         const rand = uniqueRandom(1, 0x1FFFFFFF);
         const switchCaseFlow = [];
@@ -124,7 +131,8 @@ function handle (source) {
               });
 
               return astHelper.empty();
-            } else if (node_.type === 'IfStatement') {
+            }
+            if (node_.type === 'IfStatement') {
               const caseValue = {
                 if: rand(),
                 consequent: rand(),
@@ -312,13 +320,6 @@ function handle (source) {
             }
           }
         ];
-      }
-    },
-    leave (node, parent) {
-      if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
-        const scope = scopeMgr.current();
-        console.log('leave scope: ' + scope.id);
-        scopeMgr.pop();
       }
     }
   });
