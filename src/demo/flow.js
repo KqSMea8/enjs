@@ -1,11 +1,13 @@
 function f () {
   var a = 1;
-  if (a === 1)
-    console.log('a===1');
-  else
-    console.log('a!==1');
-
-  console.log('a:' + a);
+  switch (a) {
+    case 1:
+      console.log('a == 1');
+    case 2:
+      console.log('a == 2');
+    default:
+      console.log('default');
+  }
 }
 
 f();

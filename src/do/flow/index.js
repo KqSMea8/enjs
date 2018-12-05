@@ -2,6 +2,7 @@ const estraverse = require('estraverse');
 const escodegen = require('escodegen');
 const shuffle = require('lodash.shuffle');
 const uniqueRandom = require('unique-random');
+const astHelper = require('../../utils/ast');
 
 const FLOW_DEBUG = true;
 
@@ -59,36 +60,10 @@ function handle (source) {
   console.log('\r\nobfuscate working flow....');
   scopeMgr.cnt_scope = 1;
   scopeMgr.entered = [0];
-  const globalJmpTable = [];
-  const astHelper = {
-    break () {
-      return {
-        'type': 'BreakStatement',
-        'label': null
-      };
-    },
-    empty () {
-      return {
-        'type': 'EmptyStatement'
-      };
-    },
-    flow_set_next (step) {
-      return {
-        'type': 'ExpressionStatement',
-        'expression': {
-          'type': 'AssignmentExpression',
-          'operator': '=',
-          'left': {
-            'type': 'Identifier',
-            'name': '__step__'
-          },
-          'right': {
-            'type': 'Literal',
-            'value': step // 水平流程, 下一步就是下一个数组内容
-          }
-        }
-      };
-    }
+  const globalJmpTable = {};
+
+  astHelper.flow_set_next = (step) => {
+    return astHelper.assgin_variable('__step__', step); // 水平流程, 下一步就是下一个数组内容
   };
 
   estraverse.traverse(source.ast, {
@@ -108,30 +83,38 @@ function handle (source) {
         const switchCaseFlow = [];
 
         // 匹配流程
+        const initLabel = rand();
+        let stepLabel = initLabel;
         estraverse.replace(node, {
           enter (node_, parent_) {
             if (node_.type === 'ExpressionStatement' ||
               node_.type === 'VariableDeclaration' || node_.type === 'FunctionDeclaration') {
               // push a new switch case node
-              const to = rand();
-              globalJmpTable.push(to);
+              const step = {
+                label: stepLabel,
+                to: rand(),
+                nextLabel: rand(),
+              };
+              globalJmpTable[step.label] = step.to;
               switchCaseFlow.push({
                 'type': 'SwitchCase',
                 'test': {
                   'type': 'Literal',
-                  'value': to
+                  'value': step.to
                 },
                 'consequent': [
                   // 当前代码
                   node_,
                   // 准备下一步代码
-                  astHelper.flow_set_next(globalJmpTable.length), // 水平流程, 下一步就是下一个数组内容
+                  astHelper.flow_set_next(step.nextLabel), // 水平流程, 下一步
                   astHelper.break(),
                 ]
               });
 
+              stepLabel = step.nextLabel;
               return astHelper.empty();
             }
+
             if (node_.type === 'IfStatement') {
               const caseValue = {
                 if: rand(),
@@ -139,15 +122,15 @@ function handle (source) {
                 alternate: rand()
               };
               let step = {
-                if: globalJmpTable.length - 1,
-                consequent: globalJmpTable.length + 1,
-                alternate: globalJmpTable.length + 2,
-                end: globalJmpTable.length + 3,
+                if: stepLabel,
+                consequent: rand(),
+                alternate: rand(),
+                end: rand(),
               };
 
-              globalJmpTable.push(caseValue.if);
-              globalJmpTable.push(caseValue.consequent);
-              globalJmpTable.push(caseValue.alternate);
+              globalJmpTable[step.if] = caseValue.if;
+              globalJmpTable[step.consequent] = caseValue.consequent;
+              globalJmpTable[step.alternate] = caseValue.alternate;
 
               // if
               switchCaseFlow.push({
@@ -184,13 +167,17 @@ function handle (source) {
                   'type': 'Literal',
                   'value': caseValue.consequent
                 },
-                'consequent': [
-                  // 当前代码
-                  node_.consequent,
-                  // 准备下一步代码
-                  astHelper.flow_set_next(step.end),
-                  astHelper.break(),
-                ]
+                'consequent': (() => {
+                  const ret = [
+                    // 准备下一步代码
+                    astHelper.flow_set_next(step.end),
+                    astHelper.break(),
+                  ];
+                  if (node_.consequent) { // 当前代码
+                    ret.unshift(node_.consequent);
+                  }
+                  return ret;
+                })()
               });
               // alternate (false)
               switchCaseFlow.push({
@@ -199,28 +186,104 @@ function handle (source) {
                   'type': 'Literal',
                   'value': caseValue.alternate
                 },
+                'consequent': (() => {
+                  const ret = [
+                    // 准备下一步代码
+                    astHelper.flow_set_next(step.end),
+                    astHelper.break(),
+                  ];
+                  if (node_.alternate) { // 当前代码
+                    ret.unshift(node_.alternate);
+                  }
+                  return ret;
+                })()
+              });
+
+              stepLabel = step.end;
+              return astHelper.empty();
+            }
+
+            if (node_.type === 'SwitchStatement') {
+              // SwitchStatement n个展开, 混入父级
+
+              const caseCount = node_.cases.length;
+              const steps = [{ step: stepLabel, to: rand() }];
+              const oldCases = []; // 原有switch case暂存
+              for (let i = 0; i < caseCount; i++) {
+                const step = rand();
+                steps.push({ step, to: rand() });
+                oldCases.push(node_.cases[i].consequent);
+                node_.cases[i].consequent = [
+                  astHelper.flow_set_next(step),
+                  astHelper.break(),
+                ];
+              }
+              steps.push({ step: rand(), to: rand() }); // 下一个语句的 step
+
+              for (let i = 0; i < steps.length; i++) {
+                globalJmpTable[steps[i].step] = steps[i].to
+              }
+
+              // body 0
+              switchCaseFlow.push({
+                'type': 'SwitchCase',
+                'test': {
+                  'type': 'Literal',
+                  'value': steps[0].to
+                },
                 'consequent': [
-                  // 当前代码
-                  node_.alternate,
-                  // 准备下一步代码
-                  astHelper.flow_set_next(step.end),
+                  // 当前代码 switch
+                  {
+                    'type': 'SwitchStatement',
+                    'discriminant': node_.discriminant,
+                    'cases': node_.cases
+                  },
+                  // 下一步
+                  astHelper.flow_set_next(steps[steps.length - 1].step),
                   astHelper.break(),
                 ]
               });
 
+              // body caseCount 个
+              for (let i = 0; i < caseCount; i++) {
+                switchCaseFlow.push({
+                  'type': 'SwitchCase',
+                  'test': {
+                    'type': 'Literal',
+                    'value': steps[i + 1].to
+                  },
+                  'consequent': [
+                    ...oldCases[i],
+                    // 准备下一步代码
+                    astHelper.flow_set_next(steps[steps.length - 1].step),
+                    astHelper.break(),
+                  ]
+                });
+              }
+
+              stepLabel = steps[steps.length - 1].step;
+              return astHelper.empty();
+            }
+
+            if (node_.type === 'TryStatement') {
+              stepLabel = step.end;
               return astHelper.empty();
             }
           }
         });
 
         // set `__step__ = false;` to break the while loop
-        const to = rand();
-        globalJmpTable.push(to);
+        const step = {
+          label: stepLabel,
+          to: rand(),
+          nextLabel: rand(),
+        };
+        globalJmpTable[step.label] = step.to;
         switchCaseFlow.push({
           'type': 'SwitchCase',
           'test': {
             'type': 'Literal',
-            'value': to
+            'value': step.to
           },
           'consequent': [
             {
@@ -255,7 +318,7 @@ function handle (source) {
                 },
                 'init': {
                   'type': 'Literal',
-                  'value': 0
+                  'value': initLabel
                 }
               }
             ],
@@ -344,16 +407,28 @@ function handle (source) {
               },
               'computed': false,
               'value': {
-                'type': 'ArrayExpression',
-                'elements': (function () {
+                'type': 'ObjectExpression',
+                'properties': (function () {
                   const ret = [];
-                  globalJmpTable.forEach(to => {
-                    ret.push({
-                      'type': 'Literal',
-                      'value': to,
-                      'raw': `${to}`
-                    });
-                  });
+                  for (let key in globalJmpTable) {
+                    if (globalJmpTable.hasOwnProperty(key)) {
+                      ret.push({
+                        'type': 'Property',
+                        'key': {
+                          'type': 'Literal',
+                          'value': key,
+                        },
+                        'computed': false,
+                        'value': {
+                          'type': 'Literal',
+                          'value': globalJmpTable[key],
+                        },
+                        'kind': 'init',
+                        'method': false,
+                        'shorthand': false
+                      });
+                    }
+                  }
                   return ret;
                 })()
               },

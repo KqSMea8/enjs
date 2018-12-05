@@ -1,44 +1,51 @@
 var __flow__ = {
-    flow: [
-        145563652,
-        232941673,
-        378150741,
-        205687383,
-        460378500,
-        230250875
-    ],
+    flow: {
+        '204961096': 126728977,
+        '274966802': 104781108,
+        '321377520': 458221788,
+        '323882793': 483818604,
+        '378833509': 208372903,
+        '504072047': 419042415
+    },
     next: function (__step__) {
         return this.flow[__step__];
     }
 };
 function f() {
-    var __step__ = 0;
+    var __step__ = 274966802;
     while (1) {
         switch (__flow__.next(__step__)) {
-        case 145563652:
+        case 104781108:
             var a = 1;
-            __step__ = 1;
+            __step__ = 378833509;
             break;
-        case 232941673:
-            if (a === 1) {
-                __step__ = 2;
-            } else {
-                __step__ = 3;
+        case 208372903:
+            switch (a) {
+            case 1:
+                __step__ = 504072047;
+                break;
+            case 2:
+                __step__ = 323882793;
+                break;
+            default:
+                __step__ = 204961096;
+                break;
             }
+            __step__ = 321377520;
             break;
-        case 378150741:
-            console.log('a===1');
-            __step__ = 4;
+        case 419042415:
+            console.log('a == 1');
+            __step__ = 321377520;
             break;
-        case 205687383:
-            console.log('a!==1');
-            __step__ = 4;
+        case 483818604:
+            console.log('a == 2');
+            __step__ = 321377520;
             break;
-        case 460378500:
-            console.log('a:' + a);
-            __step__ = 5;
+        case 126728977:
+            console.log('default');
+            __step__ = 321377520;
             break;
-        case 230250875:
+        case 458221788:
             __step__ = false;
             break;
         }
