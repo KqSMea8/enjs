@@ -2,9 +2,9 @@ const estraverse = require('estraverse');
 const escodegen = require('escodegen');
 const shuffle = require('lodash.shuffle');
 const uniqueRandom = require('unique-random');
-const astHelper = require('../../utils/ast');
+const astHelper = require('../../utils/ast-helper');
 
-const FLOW_DEBUG = true;
+const _FLOW_DEBUG = true;
 
 function handle (source) {
   const scopeMgr = {
@@ -35,7 +35,7 @@ function handle (source) {
   };
 
   // 先匹配一下各个 scope
-  console.log('\r\nparse scope....');
+  if (_FLOW_DEBUG) console.log('\r\nparse scope....');
   estraverse.replace(source.ast, {
     enter (node, parent) {
       if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
@@ -57,65 +57,70 @@ function handle (source) {
     }
   });
 
-  console.log('\r\nobfuscate working flow....');
+  if (_FLOW_DEBUG) console.log('\r\nobfuscate working flow....');
   scopeMgr.cnt_scope = 1;
   scopeMgr.entered = [0];
   const globalJmpTable = {};
+  const globalJmpTableName = astHelper.randomName();
 
-  astHelper.flow_set_next = (step) => {
-    return astHelper.assgin_variable('__step__', step); // 水平流程, 下一步就是下一个数组内容
+  astHelper.flow_set_next = (stepIdentityName, step) => {
+    return astHelper.ASSIGN_VARIABLE(stepIdentityName, step); // 水平流程, 下一步就是下一个数组内容
   };
 
   estraverse.traverse(source.ast, {
     enter (node, parent) {
       if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
         scopeMgr.push(scopeMgr.cnt_scope++);
-        console.log('enter scope: ' + scopeMgr.current().id);
+        if (_FLOW_DEBUG) console.log('enter scope: ' + scopeMgr.current().id);
       }
     },
     leave (node, parent) {
-      if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
+      if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration') && node.body.length > 2) {
         const scope = scopeMgr.current();
-        console.log('leave scope: ' + scope.id);
+        if (_FLOW_DEBUG) console.log('leave scope: ' + scope.id);
         scopeMgr.pop();
 
         const rand = uniqueRandom(1, 0x1FFFFFFF);
-        const switchCaseFlow = [];
+        const stepIdentityName = astHelper.randomName();
 
         // 匹配流程
         const initLabel = rand();
         let stepLabel = initLabel;
-        estraverse.replace(node, {
-          enter (node_, parent_) {
-            if (node_.type === 'ExpressionStatement' ||
-              node_.type === 'VariableDeclaration' || node_.type === 'FunctionDeclaration') {
-              // push a new switch case node
-              const step = {
-                label: stepLabel,
-                to: rand(),
-                nextLabel: rand(),
-              };
-              globalJmpTable[step.label] = step.to;
-              switchCaseFlow.push({
-                'type': 'SwitchCase',
-                'test': {
-                  'type': 'Literal',
-                  'value': step.to
-                },
-                'consequent': [
-                  // 当前代码
-                  node_,
-                  // 准备下一步代码
-                  astHelper.flow_set_next(step.nextLabel), // 水平流程, 下一步
-                  astHelper.break(),
-                ]
-              });
+        const switchCaseFlow = [];
+        let readyForFlatFlow = false;
 
-              stepLabel = step.nextLabel;
-              return astHelper.empty();
-            }
+        const pushNewJmpCase = (body, { label, caseValue, nextLabel } = {}) => {
+          const step = {
+            label: label || stepLabel,
+            caseValue: caseValue || rand(),
+            nextLabel: nextLabel || rand(),
+          };
+          globalJmpTable[step.label] = step.caseValue;
+          switchCaseFlow.push({
+            'type': 'SwitchCase',
+            'test': {
+              'type': 'Literal',
+              'value': step.caseValue
+            },
+            'consequent': [
+              ...body(step.nextLabel),
+              astHelper.BREAK_STATEMENT(),
+            ]
+          });
+          stepLabel = step.nextLabel;
+          readyForFlatFlow = false;
+        };
 
-            if (node_.type === 'IfStatement') {
+        pushNewJmpCase(nextLabel => {
+          return [
+            astHelper.flow_set_next(stepIdentityName, nextLabel),
+          ];
+        });
+
+        for (let i = 0; i < node.body.length; i++) {
+          const node_ = node.body[i];
+          switch (node_.type) {
+            case 'IfStatement': {
               const caseValue = {
                 if: rand(),
                 consequent: rand(),
@@ -128,83 +133,65 @@ function handle (source) {
                 end: rand(),
               };
 
-              globalJmpTable[step.if] = caseValue.if;
-              globalJmpTable[step.consequent] = caseValue.consequent;
-              globalJmpTable[step.alternate] = caseValue.alternate;
-
               // if
-              switchCaseFlow.push({
-                'type': 'SwitchCase',
-                'test': {
-                  'type': 'Literal',
-                  'value': caseValue.if
-                },
-                'consequent': [
-                  // 当前代码
+              pushNewJmpCase(() => {
+                return [
                   {
                     'type': 'IfStatement',
                     'test': node_.test,
                     'consequent': {
                       'type': 'BlockStatement',
                       'body': [
-                        astHelper.flow_set_next(step.consequent),
+                        astHelper.flow_set_next(stepIdentityName, node_.consequent ? step.consequent : step.end),
                       ]
                     },
                     'alternate': {
                       'type': 'BlockStatement',
                       'body': [
-                        astHelper.flow_set_next(step.alternate),
+                        astHelper.flow_set_next(stepIdentityName, node_.alternate ? step.alternate : step.end),
                       ]
                     }
-                  },
-                  astHelper.break(),
-                ]
+                  }
+                ];
+              }, {
+                label: step.if,
+                caseValue: caseValue.if
               });
+
               // consequent (true)
-              switchCaseFlow.push({
-                'type': 'SwitchCase',
-                'test': {
-                  'type': 'Literal',
-                  'value': caseValue.consequent
-                },
-                'consequent': (() => {
-                  const ret = [
+              if (node_.consequent) {
+                pushNewJmpCase(() => {
+                  return [
+                    node_.consequent,
                     // 准备下一步代码
-                    astHelper.flow_set_next(step.end),
-                    astHelper.break(),
+                    astHelper.flow_set_next(stepIdentityName, step.end),
                   ];
-                  if (node_.consequent) { // 当前代码
-                    ret.unshift(node_.consequent);
-                  }
-                  return ret;
-                })()
-              });
+                }, {
+                  label: step.consequent,
+                  caseValue: caseValue.consequent
+                });
+              }
+
               // alternate (false)
-              switchCaseFlow.push({
-                'type': 'SwitchCase',
-                'test': {
-                  'type': 'Literal',
-                  'value': caseValue.alternate
-                },
-                'consequent': (() => {
-                  const ret = [
+              if (node_.alternate) {
+                pushNewJmpCase(() => {
+                  return [
+                    node_.alternate,
                     // 准备下一步代码
-                    astHelper.flow_set_next(step.end),
-                    astHelper.break(),
+                    astHelper.flow_set_next(stepIdentityName, step.end),
                   ];
-                  if (node_.alternate) { // 当前代码
-                    ret.unshift(node_.alternate);
-                  }
-                  return ret;
-                })()
-              });
+                }, {
+                  label: step.alternate,
+                  caseValue: caseValue.alternate
+                });
+              }
 
               stepLabel = step.end;
-              return astHelper.empty();
+              break;
             }
-
-            if (node_.type === 'SwitchStatement') {
+            case 'SwitchStatement_@deprecated': {
               // SwitchStatement n个展开, 混入父级
+              // 需要处理 BREAK_STATEMENT 问题 较为麻烦
 
               const caseCount = node_.cases.length;
               const steps = [{ step: stepLabel, to: rand() }];
@@ -214,14 +201,14 @@ function handle (source) {
                 steps.push({ step, to: rand() });
                 oldCases.push(node_.cases[i].consequent);
                 node_.cases[i].consequent = [
-                  astHelper.flow_set_next(step),
-                  astHelper.break(),
+                  astHelper.flow_set_next(stepIdentityName, step),
+                  astHelper.BREAK_STATEMENT(),
                 ];
               }
               steps.push({ step: rand(), to: rand() }); // 下一个语句的 step
 
               for (let i = 0; i < steps.length; i++) {
-                globalJmpTable[steps[i].step] = steps[i].to
+                globalJmpTable[steps[i].step] = steps[i].to;
               }
 
               // body 0
@@ -239,8 +226,8 @@ function handle (source) {
                     'cases': node_.cases
                   },
                   // 下一步
-                  astHelper.flow_set_next(steps[steps.length - 1].step),
-                  astHelper.break(),
+                  astHelper.flow_set_next(stepIdentityName, steps[steps.length - 1].step),
+                  astHelper.BREAK_STATEMENT(),
                 ]
               });
 
@@ -255,24 +242,45 @@ function handle (source) {
                   'consequent': [
                     ...oldCases[i],
                     // 准备下一步代码
-                    astHelper.flow_set_next(steps[steps.length - 1].step),
-                    astHelper.break(),
+                    astHelper.flow_set_next(stepIdentityName, steps[steps.length - 1].step),
+                    astHelper.BREAK_STATEMENT(),
                   ]
                 });
               }
 
               stepLabel = steps[steps.length - 1].step;
-              return astHelper.empty();
+              break;
             }
-
-            if (node_.type === 'TryStatement') {
-              stepLabel = step.end;
-              return astHelper.empty();
+            case 'ExpressionStatement': {
+              // push a new switch case node
+              pushNewJmpCase(nextLabel => {
+                return [
+                  node_, // 当前代码
+                  astHelper.flow_set_next(stepIdentityName, nextLabel), // 水平流程, 下一步
+                ];
+              });
+              break;
+            }
+            case 'VariableDeclaration':
+            case 'FunctionDeclaration':
+            default: {
+              if (readyForFlatFlow === false) {
+                pushNewJmpCase(nextLabel => {
+                  return [
+                    node_, // 当前代码
+                    astHelper.flow_set_next(stepIdentityName, nextLabel), // 水平流程, 下一步
+                  ];
+                });
+                readyForFlatFlow = true;
+              } else {
+                // 加入上一句末尾
+                switchCaseFlow[switchCaseFlow.length - 1].consequent.splice(switchCaseFlow.length - 1, 0, node_);
+              }
             }
           }
-        });
+        }
 
-        // set `__step__ = false;` to break the while loop
+        // set `__step__ = false;` to BREAK_STATEMENT the while loop
         const step = {
           label: stepLabel,
           to: rand(),
@@ -293,7 +301,7 @@ function handle (source) {
                 'operator': '=',
                 'left': {
                   'type': 'Identifier',
-                  'name': '__step__'
+                  'name': stepIdentityName
                 },
                 'right': {
                   'type': 'Literal',
@@ -301,11 +309,11 @@ function handle (source) {
                 }
               }
             },
-            astHelper.break(),
+            astHelper.BREAK_STATEMENT(),
           ]
         });
 
-        // replace scope body to `while(1) { switch (__flow__.next()) { case... } }`
+        // replace scope body to `while(1) { switch ({globalJmpTableName}.next()) { case... } }`
         node.body = [
           {
             'type': 'VariableDeclaration',
@@ -314,7 +322,7 @@ function handle (source) {
                 'type': 'VariableDeclarator',
                 'id': {
                   'type': 'Identifier',
-                  'name': '__step__'
+                  'name': stepIdentityName
                 },
                 'init': {
                   'type': 'Literal',
@@ -343,7 +351,7 @@ function handle (source) {
                       'computed': false,
                       'object': {
                         'type': 'Identifier',
-                        'name': '__flow__'
+                        'name': globalJmpTableName
                       },
                       'property': {
                         'type': 'Identifier',
@@ -353,11 +361,11 @@ function handle (source) {
                     'arguments': [
                       {
                         'type': 'Identifier',
-                        'name': '__step__'
+                        'name': stepIdentityName
                       }
                     ]
                   },
-                  'cases': FLOW_DEBUG ? switchCaseFlow : shuffle(switchCaseFlow) // 流程打乱
+                  'cases': _FLOW_DEBUG ? switchCaseFlow : shuffle(switchCaseFlow) // 流程打乱
                 },
                 {
                   'type': 'IfStatement',
@@ -366,7 +374,7 @@ function handle (source) {
                     'operator': '===',
                     'left': {
                       'type': 'Identifier',
-                      'name': '__step__'
+                      'name': stepIdentityName
                     },
                     'right': {
                       'type': 'Literal',
@@ -394,7 +402,7 @@ function handle (source) {
         'type': 'VariableDeclarator',
         'id': {
           'type': 'Identifier',
-          'name': '__flow__'
+          'name': globalJmpTableName
         },
         'init': {
           'type': 'ObjectExpression',
@@ -449,7 +457,7 @@ function handle (source) {
                 'params': [
                   {
                     'type': 'Identifier',
-                    'name': '__step__'
+                    'name': 'a'
                   }
                 ],
                 'body': {
@@ -473,7 +481,7 @@ function handle (source) {
                         },
                         'property': {
                           'type': 'Identifier',
-                          'name': '__step__'
+                          'name': 'a'
                         }
                       }
                     }
@@ -495,9 +503,11 @@ function handle (source) {
   });
 
   source.code = escodegen.generate(source.ast);
-  console.log('\r\n');
-  console.log(source.code);
-  console.log('\r\n');
+  if (_FLOW_DEBUG) {
+    console.log('\r\n');
+    console.log(source.code);
+    console.log('\r\n');
+  }
 }
 
 module.exports = {

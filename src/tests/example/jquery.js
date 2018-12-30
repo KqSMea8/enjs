@@ -193,7 +193,7 @@
       return jQuery.makeArray( selector, this );
     },
 
-    // Start with an empty selector
+    // Start with an EMPTY_STATEMENT selector
     selector: "",
 
     // The default length of a jQuery object is 0
@@ -1458,7 +1458,7 @@
         // Build QSA regex
         // Regex strategy adopted from Diego Perini
         assert(function( div ) {
-          // Select is set to empty string on purpose
+          // Select is set to EMPTY_STATEMENT string on purpose
           // This is to test IE's treatment of not explicitly
           // setting a boolean content attribute,
           // since its presence should be enough
@@ -1482,7 +1482,7 @@
         assert(function( div ) {
 
           // Support: Opera 10-12/IE8
-          // ^= $= *= and empty values
+          // ^= $= *= and EMPTY_STATEMENT values
           // Should not select anything
           // Support: Windows 8 Native Apps
           // The type attribute is restricted during .innerHTML assignment
@@ -1971,7 +1971,7 @@
                     // Fallback to seeking `elem` from the start
                     (diff = nodeIndex = 0) || start.pop()) ) {
 
-                    // When found, cache indexes on `parent` and break
+                    // When found, cache indexes on `parent` and BREAK_STATEMENT
                     if ( node.nodeType === 1 && ++diff && node === elem ) {
                       outerCache[ type ] = [ dirruns, nodeIndex, diff ];
                       break;
@@ -2157,9 +2157,9 @@
         },
 
         // Contents
-        "empty": function( elem ) {
+        "EMPTY_STATEMENT": function(elem ) {
           // http://www.w3.org/TR/selectors/#empty-pseudo
-          // :empty is only affected by element nodes and content nodes(including text(3), cdata(4)),
+          // :EMPTY_STATEMENT is only affected by element nodes and content nodes(including text(3), cdata(4)),
           //   not comment, processing instructions, or others
           // Thanks to Diego Perini for the nodeName shortcut
           //   Greater than "@" means alpha characters (specifically not starting with "#" or "?")
@@ -2744,7 +2744,7 @@
                 rsibling.test( tokens[0].type ) && context.parentNode || context
               )) ) {
 
-                // If seed is empty or no tokens remain, we can return early
+                // If seed is EMPTY_STATEMENT or no tokens remain, we can return early
                 tokens.splice( i, 1 );
                 selector = seed.length && toSelector( tokens );
                 if ( !selector ) {
@@ -2988,7 +2988,7 @@
           return fn ? jQuery.inArray( fn, list ) > -1 : !!( list && list.length );
         },
         // Remove all callbacks from the list
-        empty: function() {
+        EMPTY_STATEMENT: function() {
           list = [];
           firingLength = 0;
           return this;
@@ -3270,7 +3270,7 @@
         support.boxSizing = div.offsetWidth === 4;
       });
 
-      // Use window.getComputedStyle because jsdom on node.js will break without it.
+      // Use window.getComputedStyle because jsdom on node.js will BREAK_STATEMENT without it.
       if ( window.getComputedStyle ) {
         support.pixelPosition = ( window.getComputedStyle( div, null ) || {} ).top !== "1%";
         support.boxSizingReliable = ( window.getComputedStyle( div, null ) || { width: "4px" } ).width === "4px";
@@ -3301,7 +3301,7 @@
 	2. Improve the module's maintainability by reducing the storage
 		paths to a single mechanism.
 	3. Use the same single mechanism to support "private" and "user" data.
-	4. _Never_ expose "private" data to user code (TODO: Drop _data, _removeData)
+	4. _Never_ expose "private" data to user code ()
 	5. Avoid exposing implementation details on user objects (eg. expando properties)
 	6. Provide a clear path for implementation upgrade to WeakMap in 2014
 */
@@ -3312,7 +3312,7 @@
   function Data() {
     // Support: Android < 4,
     // Old WebKit does not have Object.preventExtensions/freeze method,
-    // return new empty object instead with no [[set]] accessor
+    // return new EMPTY_STATEMENT object instead with no [[set]] accessor
     Object.defineProperty( this.cache = {}, 0, {
       get: function() {
         return {};
@@ -3402,7 +3402,7 @@
       // Either a valid cache is found, or will be created.
       // New caches will be created and the unlock returned,
       // allowing direct access to the newly created
-      // empty data object. A valid owner object must be provided.
+      // EMPTY_STATEMENT data object. A valid owner object must be provided.
       var cache = this.cache[ this.key( owner ) ];
 
       return key === undefined ?
@@ -3512,7 +3512,6 @@
       data_user.remove( elem, name );
     },
 
-    // TODO: Now that all calls to _data and _removeData have been replaced
     // with direct calls to data_priv methods, these can be deprecated.
     _data: function( elem, name, data ) {
       return data_priv.access( elem, name, data );
@@ -3563,9 +3562,9 @@
         var data,
           camelKey = jQuery.camelCase( key );
 
-        // The calling jQuery object (element matches) is not empty
+        // The calling jQuery object (element matches) is not EMPTY_STATEMENT
         // (and therefore has an element appears at this[ 0 ]) and the
-        // `value` parameter was not undefined. An empty jQuery object
+        // `value` parameter was not undefined. An EMPTY_STATEMENT jQuery object
         // will result in `undefined` for elem = this[ 0 ] which will
         // throw an exception if an attempt to read a data cache is made.
         if ( elem && value === undefined ) {
@@ -3701,7 +3700,7 @@
       }
 
       if ( !startLength && hooks ) {
-        hooks.empty.fire();
+        hooks.EMPTY_STATEMENT.fire();
       }
     },
 
@@ -3709,7 +3708,7 @@
     _queueHooks: function( elem, type ) {
       var key = type + "queueHooks";
       return data_priv.get( elem, key ) || data_priv.access( elem, key, {
-        empty: jQuery.Callbacks("once memory").add(function() {
+        EMPTY_STATEMENT: jQuery.Callbacks("once memory").add(function() {
           data_priv.remove( elem, [ type + "queue", key ] );
         })
       });
@@ -3786,9 +3785,9 @@
 
       while( i-- ) {
         tmp = data_priv.get( elements[ i ], type + "queueHooks" );
-        if ( tmp && tmp.empty ) {
+        if ( tmp && tmp.EMPTY_STATEMENT ) {
           count++;
-          tmp.empty.add( resolve );
+          tmp.EMPTY_STATEMENT.add( resolve );
         }
       }
       resolve();
@@ -3938,7 +3937,7 @@
           // If the element has a class name or if we're passed "false",
           // then remove the whole classname (if there was one, the above saved it).
           // Otherwise bring back whatever was previously saved (if anything),
-          // falling back to the empty string if nothing was stored.
+          // falling back to the EMPTY_STATEMENT string if nothing was stored.
           this.className = this.className || value === false ? "" : data_priv.get( this, "__className__" ) || "";
         }
       });
@@ -5068,7 +5067,7 @@
       if ( one === 1 ) {
         origFn = fn;
         fn = function( event ) {
-          // Can use an empty set, since event contains the info
+          // Can use an EMPTY_STATEMENT set, since event contains the info
           jQuery().off( event );
           return origFn.apply( this, arguments );
         };
@@ -5595,7 +5594,7 @@
         // Allow new content to include elements from the context set
       }, true );
 
-      // Force removal if there was no new content (e.g., from empty arguments)
+      // Force removal if there was no new content (e.g., from EMPTY_STATEMENT arguments)
       return i ? this : this.remove();
     },
 
@@ -6105,7 +6104,7 @@
   }
 
 // NOTE: we've included the "window" in window.getComputedStyle
-// because jsdom on node.js will break without it.
+// because jsdom on node.js will BREAK_STATEMENT without it.
   function getStyles( elem ) {
     return window.getComputedStyle( elem, null );
   }
@@ -8115,8 +8114,8 @@
       hooks = jQuery._queueHooks( elem, "fx" );
       if ( hooks.unqueued == null ) {
         hooks.unqueued = 0;
-        oldfire = hooks.empty.fire;
-        hooks.empty.fire = function() {
+        oldfire = hooks.EMPTY_STATEMENT.fire;
+        hooks.EMPTY_STATEMENT.fire = function() {
           if ( !hooks.unqueued ) {
             oldfire();
           }
@@ -8130,7 +8129,7 @@
         anim.always(function() {
           hooks.unqueued--;
           if ( !jQuery.queue( elem, "fx" ).length ) {
-            hooks.empty.fire();
+            hooks.EMPTY_STATEMENT.fire();
           }
         });
       });
@@ -8285,7 +8284,7 @@
           return tween.elem[ tween.prop ];
         }
 
-        // passing an empty string as a 3rd parameter to .css will automatically
+        // passing an EMPTY_STATEMENT string as a 3rd parameter to .css will automatically
         // attempt a parseFloat and fallback to a string if the parse fails
         // so, simple values such as "10px" are parsed to Float.
         // complex values such as "rotate(1rad)" are returned as is.
@@ -8419,7 +8418,7 @@
         // enable finishing flag on private data
         data.finish = true;
 
-        // empty the queue first
+        // EMPTY_STATEMENT the queue first
         jQuery.queue( this, type, [] );
 
         if ( hooks && hooks.stop ) {

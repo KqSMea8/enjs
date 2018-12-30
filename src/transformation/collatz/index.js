@@ -1,40 +1,45 @@
 const estraverse = require('estraverse');
 const escodegen = require('escodegen');
-const gen = require('./gen');
+const db = require('./db');
 
 function handle (source) {
-  console.log('// Code with trigger condition:');
-  console.log(source.code);
-  console.log('// --------------------------------------');
-  console.log('// Obfuscated code:');
   estraverse.replace(source.ast, {
-    enter (node) {
+    leave (node) {
       if (node.__obfuscated) return;
 
       if (node.type === 'IfStatement' && node.test.type === 'BinaryExpression') {
         // 一方是数字的 IfStatement
         if (node.test.left.type === 'Literal' || node.test.right.type === 'Literal') {
+          let collatzAst = null;
           switch (node.test.operator) {
             case '===':
-              return gen.getByLiteral_e(node);
+              collatzAst = db.getByLiteral_e(node);
+              break;
             case '>':
-              return gen.getByLiteral_g(node);
+              collatzAst = db.getByLiteral_g(node);
+              break;
             case '>=':
-              return gen.getByLiteral_ge(node);
+              collatzAst = db.getByLiteral_ge(node);
+              break;
             case '<':
-              return gen.getByLiteral_l(node);
+              collatzAst = db.getByLiteral_l(node);
+              break;
             case '<=':
-              return gen.getByLiteral_le(node);
+              collatzAst = db.getByLiteral_le(node);
+              break;
             case '!==':
-              return gen.getByLiteral_ne(node);
+              collatzAst = db.getByLiteral_ne(node);
+              break;
+          }
+          if (collatzAst) {
+            collatzAst.__obfuscated = true;
+            return collatzAst;
           }
         }
       }
     }
   });
   source.code = escodegen.generate(source.ast);
-  console.log(source.code);
-  // eval(source.code);
 }
 
 module.exports = {

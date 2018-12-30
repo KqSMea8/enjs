@@ -4,7 +4,9 @@
  */
 const fs = require('fs');
 const path = require('path');
+const esprima = require('esprima');
 const estraverse = require('estraverse');
+const astHelper = require('../../utils/ast-helper');
 
 function randomInt (min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -16,18 +18,23 @@ function randomInt (min, max) {
  * @param type 运算符号类型
  */
 function getByLiteral (_IfStatement, type) {
-  const collatz_files = fs.readdirSync(path.join(__dirname, 'db', type));
-  if (collatz_files.length < 1) {
+  const collatzFiles = fs.readdirSync(path.join(__dirname, 'db', type))
+    .filter(e => e.indexOf('.js') > -1);
+  if (collatzFiles.length < 1) {
     return _IfStatement;
   }
-  const random = randomInt(1, collatz_files.filter(e => e.indexOf('.js.gen.json') > -1).length);
-  let collatz_ast = fs.readFileSync(path.join(__dirname, 'db', type, random + '.js.gen.json')).toString();
+  const astFile = collatzFiles[randomInt(0, collatzFiles.length - 1)];
 
-  collatz_ast = JSON.parse(collatz_ast);
-  estraverse.replace(collatz_ast, {
+  const astSourceCode = fs.readFileSync(path.join(__dirname, 'db', type, astFile))
+    .toString()
+    .replace(/local/g, astHelper.randomName());
+  const collatzAst = esprima.parse(astSourceCode);
+
+  estraverse.replace(collatzAst, {
     enter (node) {
-      // console.log(node);
-      node.__obfuscated = true;
+      /**
+       * collatz 将 if (a === 1) 这类判断转换成复杂的循环, 需要输入两个值, a 与 1
+       */
       if (node.type === 'Identifier' && node.name === '__input_var') {
         // if 的 变量
         if (_IfStatement.test.left.type !== 'Literal') {
@@ -46,13 +53,13 @@ function getByLiteral (_IfStatement, type) {
         // 执行 块
         if (node.body && node.body[0] && node.body[0].expression &&
           node.body[0].expression.type === 'CallExpression' &&
-          node.body[0].expression.callee.name === '__do_action') {
-          return _IfStatement.consequent
+          node.body[0].expression.callee.name === '__do') {
+          return _IfStatement.consequent;
         }
       }
     }
   });
-  return collatz_ast;
+  return collatzAst;
 }
 
 module.exports = {

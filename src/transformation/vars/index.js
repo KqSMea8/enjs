@@ -1,17 +1,32 @@
 const estraverse = require('estraverse');
 const escodegen = require('escodegen');
+const astHelper = require('../../utils/ast-helper');
+
+const _VARS_DEBUG = false;
 
 const OPTIONS = {
   REPLACE_VARIABLE_TO_ARRAY: 1, // 用数组代替变量声明
   REPLACE_FUNCTION_TO_ARRAY: 1, // 用数组代替函数声明
 };
 
+const arrVariable = [];
+
 function genVariable () {
   let prefix = 'v';
   for (const i in arguments) {
-    prefix += '_' + i;
+    if (arguments.hasOwnProperty(i)) {
+      prefix += '_' + arguments[i];
+    }
   }
-  return prefix + '_' + parseInt(Math.random() * 0xFFFFFFFF).toString(16).padStart(8, '0');
+  if (arrVariable[prefix]) {
+    return arrVariable[prefix];
+  }
+  if (!_VARS_DEBUG) {
+    arrVariable[prefix] = astHelper.randomName();
+  } else {
+    arrVariable[prefix] = prefix + astHelper.randomName();
+  }
+  return arrVariable[prefix];
 }
 
 function handle (source) {
@@ -45,7 +60,7 @@ function handle (source) {
   };
 
   // 先匹配一下各个 scope 的变量, 一些预处理
-  console.log('\r\nparse scope....');
+  if (_VARS_DEBUG) console.log('\r\nparse scope....');
   estraverse.replace(source.ast, {
     enter (node, parent) {
       if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
@@ -55,7 +70,7 @@ function handle (source) {
           parent: scopeMgr.current()
         });
         scopeMgr.push(scopeId);
-        // console.log('enter scope: ' + scopeMgr.current().id);
+        // if(DEBUG) console.log('enter scope: ' + scopeMgr.current().id);
       }
       const scope = scopeMgr.current();
 
@@ -77,7 +92,7 @@ function handle (source) {
               debugger;
               throw new Error('test');
             }
-            // console.log(scope.id + ' _ 提升函数到顶部');
+            // if(DEBUG) console.log(scope.id + ' _ 提升函数到顶部');
             for (let i = 0; i < scopeBody.length; i++) {
               if (scopeBody[i].type !== 'FunctionDeclaration') {
                 parentBody.splice(parentBody.indexOf(e), 1);
@@ -102,14 +117,14 @@ function handle (source) {
     leave (node, parent) {
       if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
         const scope = scopeMgr.current();
-        // console.log('leave scope: ' + scope.id);
+        // if(DEBUG) console.log('leave scope: ' + scope.id);
         scopeMgr.pop();
       }
     }
   });
 
   if (OPTIONS.REPLACE_VARIABLE_TO_ARRAY || OPTIONS.REPLACE_FUNCTION_TO_ARRAY) {
-    console.log('\r\nobfuscate identifier....');
+    if (_VARS_DEBUG) console.log('\r\nobfuscate identifier....');
     scopeMgr.cnt_scope = 1;
     scopeMgr.entered = [0];
     estraverse.replace(source.ast, {
@@ -118,16 +133,16 @@ function handle (source) {
         if (node.type === 'BlockStatement' && (parent.type === 'FunctionExpression' || parent.type === 'FunctionDeclaration')) {
           scopeMgr.push(scopeMgr.cnt_scope++);
           try {
-            console.log('enter scope: ' + scopeMgr.current().id);
+            if (_VARS_DEBUG) console.log('enter scope: ' + scopeMgr.current().id);
           } catch (e) {
-            console.error(e);
+            if (_VARS_DEBUG) console.error(e);
             debugger;
           }
           // 进入作用域, 重新初始化变量? 还未确定
         }
         const scope = scopeMgr.current();
         let prefix = `i_${scope.id}_`;
-        // console.log(node);
+        // if(DEBUG) console.log(node);
 
         // return ;
         if (OPTIONS.REPLACE_VARIABLE_TO_ARRAY &&
@@ -146,8 +161,7 @@ function handle (source) {
                 object: { type: 'Identifier', name: scope.variablesContainer },
                 property: {
                   type: 'Literal',
-                  value: prefix + e.id.name,
-                  raw: `${prefix + e.id.name}`
+                  value: genVariable(prefix, e.id.name),
                 }
               });
             } else {
@@ -161,8 +175,7 @@ function handle (source) {
                     object: { type: 'Identifier', name: scope.variablesContainer },
                     property: {
                       type: 'Literal',
-                      value: prefix + e.id.name,
-                      raw: `${prefix + e.id.name}`
+                      value: genVariable(prefix, e.id.name),
                     }
                   },
                 right: e.init || { type: 'Literal', value: null, raw: 'null' }
@@ -204,8 +217,7 @@ function handle (source) {
                     object: { type: 'Identifier', name: scope.variablesContainer },
                     property: {
                       type: 'Literal',
-                      value: prefix + node.id.name,
-                      raw: `${prefix + node.id.name}`
+                      value: genVariable(prefix, node.id.name),
                     }
                   },
                 right: _FunctionExpression
@@ -247,8 +259,7 @@ function handle (source) {
             object: { type: 'Identifier', name: variablesContainer },
             property: {
               type: 'Literal',
-              value: prefix + node.name,
-              raw: `${prefix + node.name}`
+              value: genVariable(prefix, node.name),
             }
           };
         }
@@ -267,7 +278,7 @@ function handle (source) {
             ],
             kind: 'var'
           });
-          console.log('leave scope: ' + scope.id);
+          if (_VARS_DEBUG) console.log('leave scope: ' + scope.id);
           scopeMgr.pop();
         }
       }
@@ -275,9 +286,11 @@ function handle (source) {
   }
 
   source.code = escodegen.generate(source.ast);
-  console.log('\r\n');
-  console.log(source.code);
-  console.log('\r\n');
+  if (_VARS_DEBUG) {
+    console.log('\r\n');
+    console.log(source.code);
+    console.log('\r\n');
+  }
 }
 
 module.exports = {
